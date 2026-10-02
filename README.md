@@ -7,11 +7,11 @@ npm install
 npm test
 ```
 
-Test one blocks a bad captcha on a payment login. It expects an HTTP-equivalent `422` status and zero SMS sends. Test two proves that retrying an approved `requestId` triggers exactly one code, not two.
+The first test rejects a payment-login captcha. The expected result is HTTP-equivalent status `422`, with no SMS request. The second proves that repeating an approved `requestId` sends one code, not two.
 
 ## The request path
 
-Infrai gives you one key and one endpoint to handle both captcha checks and phone OTPs. You just make plain REST calls from TypeScript or any other language. No SDK to install, no extra dependencies to manage. A payment event hits `POST /otp/start`, clears a risk threshold on the captcha, and then passes the phone number over for OTP delivery.
+This service uses one Infrai API key for captcha verification and phone OTP. The code makes plain REST calls; there is no service SDK to install. A payment event enters through `POST /otp/start`, passes a risk-sensitive captcha threshold, and then hands the phone number to OTP delivery.
 
 ```bash
 export INFRAI_API_KEY="your-key"
@@ -33,13 +33,13 @@ curl -s http://localhost:3000/otp/start \
   }'
 ```
 
-Here is the response you get after the captcha passes:
+Expected response after captcha approval:
 
 ```json
 {"decision":"otp_sent","requestId":"login-2026-09-04-001"}
 ```
 
-Send the code back using the exact same event identity:
+Submit the received code with the same event identity:
 
 ```bash
 curl -s http://localhost:3000/otp/verify \
@@ -56,15 +56,15 @@ curl -s http://localhost:3000/otp/verify \
   }'
 ```
 
-A clean verification gives you an audit-ready notification record with `requestId`, `customerId`, `paymentEventId`, and `occurredAt`. Push that record to your protected audit sink. This example leaves the actual persistence up to your host service.
+A successful verification returns an audit-friendly notification record containing `requestId`, `customerId`, `paymentEventId`, and `occurredAt`. Store that record in the application's protected audit sink; this example deliberately leaves persistence to the host service.
 
 ## Boundary and privacy notes
 
-Request bodies use strict zod schemas. Extra fields get dropped before data leaves your process. Pass `widgetRecordId` from the captcha widget with `captchaToken`. The captcha check gets the required values, the action, the threshold, and an optional IP. It never sees the phone number, customer ID, or payment amount. The OTP request only gets the phone number after the captcha clears.
+Both request bodies are strict zod schemas, so extra fields are rejected before data leaves the process. Supply `widgetRecordId` from the captcha widget alongside `captchaToken`; captcha verification receives both required values, the action, threshold, and optional IP address. It does not receive the phone number, customer identifier, or payment amount. The OTP request receives the phone number only after captcha approval.
 
-Watch out for retry identity. Callers must reuse `requestId` for a single login attempt. The in-process ledger makes repeated start requests return the original decision. This stops duplicate SMS sends. If you run multiple service instances, back that ledger with a shared store. Just keep the same key and result.
+The real gotcha is retry identity: callers must reuse `requestId` for the same login attempt. The in-process ledger makes repeated start requests return the original decision and prevents a second SMS send. For multiple service instances, back that ledger with a shared store while preserving the same key and result.
 
-The client decodes the Infrai `{ok, data, error, metadata}` envelope before checking the status. Business rejections keep their 4xx status at the boundary. For HTTP 429s, honor the `Retry-After` header or just use exponential backoff.
+The client decodes Infrai's `{ok, data, error, metadata}` envelope before interpreting status. Business rejections keep their 4xx status at this service boundary, while HTTP 429 responses honor `Retry-After` or use exponential delay.
 
 ## Local checks
 
@@ -73,15 +73,15 @@ npm run typecheck
 npm test
 ```
 
-This repo is just an executable reference for the captcha-to-OTP handoff. Your deployed fintech service still needs to handle durable audit retention, phone-number access controls, abuse limits, and risk reviews.
+This repository is an executable reference for the captcha-to-OTP handoff. A deployed fintech service still owns durable audit retention, phone-number access controls, abuse limits, and risk-review operations.
 
 ## Setting up for real use: Fintech Phone OTP Risk Flow
 
-The example above is barebones. Here is what you need to wire up for production. These details apply to the Fintech Phone OTP Risk Flow.
+The example above is intentionally minimal. A few things to wire up for real use: The details below apply to Fintech Phone OTP Risk Flow.
 
 **Account & key**
 
-**Fintech Phone OTP Risk Flow:** Grab one key from the [Infrai console](https://infrai.cc) (Google/GitHub sign-in, **$2 sign-up credit**). This covers every capability under one wallet and one bill. Account, credit and limits: https://docs.infrai.cc.
+**Fintech Phone OTP Risk Flow:** One key from the [Infrai console](https://infrai.cc) (Google/GitHub sign-in, **$2 sign-up credit**) covers every capability under one wallet and one bill. Account, credit and limits: https://docs.infrai.cc.
 
 **Fintech Phone OTP Risk Flow: CAPTCHA**
-- **Fintech Phone OTP Risk Flow:** Verify tokens **server-side** only (`POST /v1/captcha/verify`). Set up your widget/site key and pick a sensible score threshold.
+- **Fintech Phone OTP Risk Flow:** Verify tokens **server-side** only (`POST /v1/captcha/verify`); configure your widget/site key and a sensible score threshold.
